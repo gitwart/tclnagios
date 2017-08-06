@@ -1,0 +1,61 @@
+#!/usr/bin/tclsh
+
+package require cmdline
+package require nagios 1.3
+
+# This must be defined before the command line options are processed
+# because it can be overridden by the -service option.
+set nagios::serviceName DIR
+
+set options $nagios::options
+lappend options \
+    [list z "Return OK if all directories exist and are empty"]
+
+# Process the standard Nagios command line options.  We pass the
+# plugin-specific options for useful error reporting.
+nagios::process_options $options argv
+
+if {[catch {
+    foreach {var val} [::cmdline::getoptions argv $options] {
+        set option($var) $val
+    }
+} msg]} {
+    puts stderr $msg
+    exit 1
+}
+
+set dir_noexist {}
+array set nFiles {}
+
+# Perform a listing of each input directory
+foreach dir $argv {
+    if {![file isdirectory $dir]} {
+	lappend dir_noexist $dir
+    } else {
+	set nFiles($dir) [llength [glob -nocomplain -directory $dir *]]
+    }
+}
+
+# Return an error if any of the input directories do not exist
+if {$dir_noexist != ""} {
+    if {[llength $dir_noexist == 1]} {
+	nagios::exit_critical "Directory '$dir_noexist' does not exist"
+    } else {
+	nagios::exit_critical "Directories do not exist: $dir_noexist"
+    }
+}
+
+# Collect the list of directories that are not empty
+set badList {}
+foreach el [array names nFiles] {
+    if {$option(z)} {
+        if {$nFiles($el) != 0} {
+	    lappend badList $el
+        }
+    }
+}
+if {[llength $badList] != 0} {
+    nagios::exit_critical "Directories not empty: $badList"
+}
+
+nagios::exit_ok "All directories are ok"
